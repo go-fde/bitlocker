@@ -191,9 +191,7 @@ func (d *Device) ReadAt(p []byte, off int64) (int, error) {
 			if n, err := d.r.ReadAt(chunk, int64(src)); n < len(chunk) {
 				return 0, fmt.Errorf("bitlocker: read at %d: %w", src, err)
 			}
-			for i := uint64(0); i < uint64(len(chunk)); i += ss {
-				d.c.decrypt(chunk[i:i+ss], src+i, scratch)
-			}
+			d.c.decrypt(chunk, src, scratch)
 		}
 		pos = runEnd
 	}
