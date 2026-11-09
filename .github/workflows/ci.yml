@@ -1,0 +1,111 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # cryptsetup's BitLocker images, made by Windows (tests/bitlk-images.tar.xz).
+  # GPL-2.0+, so they are fetched, never committed; pinned by commit and
+  # checked by SHA-256.
+  BITLK_URL: https://raw.githubusercontent.com/mbroz/cryptsetup/4eb729da3f46642d6fe1fabbbedb127078eccb95/tests/bitlk-images.tar.xz
+  BITLK_SHA256: 68bf5669f777668112d497234ebe2166b5feaf0e33b206b095b917f82937bd30
+
+jobs:
+  native:
+    name: native (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runs-on: ubuntu-latest
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: true
+
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "$out"; exit 1; fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Fetch the Windows-made images
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/bitlk-images.tar.xz" "$BITLK_URL"
+          echo "$BITLK_SHA256  $RUNNER_TEMP/bitlk-images.tar.xz" | sha256sum -c -
+          echo "BITLK_IMAGES=$RUNNER_TEMP/bitlk-images.tar.xz" >> "$GITHUB_ENV"
+
+      - name: Test (race, coverage, interoperability)
+        run: go test -race -coverprofile=cover.out ./...
+
+      - name: Coverage is 100%
+        run: |
+          total=$(go tool cover -func=cover.out | tail -1 | awk '{print $3}')
+          echo "coverage: $total"
+          [ "$total" = "100.0%" ]
+
+      - name: Benchmarks (allocations)
+        run: go test -run '^$' -bench . -benchtime 5x ./...
+
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [FuzzOpen, FuzzStartupKey, FuzzRecoveryPassword]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: true
+      # Inputs are 320 KiB images: minimising each new one for the default
+      # 60 s would leave most of the budget idle.
+      - run: go test -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 60s -fuzzminimizetime 5s .
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: true
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  # Big-endian: every on-disk field is little-endian, so s390x exercises the
+  # explicit decoding. Unit tests only; the corpus runs natively.
+  s390x:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: true
+      - name: Set up QEMU
+        run: docker run --privileged --rm tonistiigi/binfmt --install s390x
+      - name: Test under QEMU
+        env:
+          GOOS: linux
+          GOARCH: s390x
+          CGO_ENABLED: '0'
+        run: |
+          go test -c -o bitlocker.test .
+          docker run --rm --platform linux/s390x -v "$PWD:/work" -w /work debian:trixie ./bitlocker.test -test.v -test.run 'Test'
