@@ -85,10 +85,22 @@ requires 100% coverage.
 ## Performance
 
 `ReadAt` makes two allocations per call, whatever the length. A
-sector-aligned read decrypts in the caller's buffer. The throughput
-comparison with OpenSSL's AES-XTS/CBC on one core is not published yet:
-the machine was too loaded to give a number worth keeping (see
-`bench_test.go`).
+sector-aligned read decrypts in the caller's buffer.
+
+The table below was measured on one Apple M4 Max core, reading 1 MiB per
+call from 512-byte-sector volumes, in two interleaved rounds. The
+reference is OpenSSL 3.6.5 on the same core (`openssl speed -seconds 2
+-bytes 512 -evp …`):
+
+| Method | this package | OpenSSL | |
+|---|---|---|---|
+| AES-128-XTS | 7.5 GB/s | 12.9 GB/s | per-sector cost in xts: go-encryptions/xts#16 |
+| AES-256-XTS | 6.5 GB/s | — | |
+| AES-128-CBC | 2.1 GB/s | 21.0 GB/s (4 KiB) | one block at a time: #2 |
+| AES-128-CBC + Elephant | 0.40 GB/s | no equivalent | dm-crypt's diffuser is kernel C, not measurable on macOS |
+| Key derivation (2²⁰ SHA-256) | 67 ms | ≈ 100 ms (2²⁰ × `openssl speed sha256` at 64 bytes) | |
+
+Every row below OpenSSL is an open defect, linked in the table.
 
 ## References
 
