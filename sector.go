@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/go-encryptions/cbc"
 	"github.com/go-encryptions/xts"
 )
 
@@ -27,9 +28,10 @@ type sectorCipher interface {
 }
 
 type scratch struct {
-	iv, es [16]byte
-	ks     [32]byte
-	words  []uint32 // sector size / 4, for the Elephant diffuser
+	es    [16]byte
+	ks    [32]byte
+	words []uint32 // sector size / 4, for the Elephant diffuser
+	ivs   []byte   // one eboiv IV per sector of the run, grown as needed
 }
 
 func newScratch(sectorSize int) *scratch {
@@ -39,7 +41,7 @@ func newScratch(sectorSize int) *scratch {
 func newSectorCipher(m Method, key []byte, sectorSize int) (sectorCipher, error) {
 	switch m {
 	case AES128CBC, AES256CBC:
-		b, err := aes.NewCipher(key)
+		b, err := cbc.NewCipher(key)
 		if err != nil {
 			return nil, err
 		}
@@ -47,7 +49,7 @@ func newSectorCipher(m Method, key []byte, sectorSize int) (sectorCipher, error)
 	case AES128CBCElephant, AES256CBCElephant:
 		// The data key and the Elephant key have the same length.
 		half := len(key) / 2
-		b, err := aes.NewCipher(key[:half])
+		b, err := cbc.NewCipher(key[:half])
 		if err != nil {
 			return nil, err
 		}
@@ -72,32 +74,25 @@ func sectorShift(n int) int {
 
 // cbcCipher is AES-CBC with dm-crypt's "eboiv": IV = AES_K(LE128(pos)).
 type cbcCipher struct {
-	b  cipher.Block
+	b  *cbc.Cipher
 	ss int
 }
 
+// decrypt computes the eboiv IV of every sector of the run with one
+// EncryptECB (8 blocks at a time) and decrypts the run with one
+// DecryptSectors (8 blocks at a time, go-encryptions/cbc).
 func (c *cbcCipher) decrypt(p []byte, pos uint64, s *scratch) {
-	for i := 0; i < len(p); i += c.ss {
-		c.sector(p[i:i+c.ss], pos+uint64(i), s)
+	n := len(p) / c.ss
+	if cap(s.ivs) < 16*n {
+		s.ivs = make([]byte, 16*n)
 	}
-}
-
-// sector is CBC from the last block back to the first, so that each block
-// is decrypted in place while the ciphertext block before it is still
-// there to XOR: no buffer and no cipher.BlockMode per sector.
-func (c *cbcCipher) sector(p []byte, pos uint64, s *scratch) {
-	s.iv = [16]byte{}
-	binary.LittleEndian.PutUint64(s.iv[:], pos)
-	c.b.Encrypt(s.iv[:], s.iv[:])
-	for i := len(p) - 16; i >= 0; i -= 16 {
-		blk := p[i : i+16]
-		c.b.Decrypt(blk, blk)
-		prev := s.iv[:]
-		if i > 0 {
-			prev = p[i-16 : i]
-		}
-		subtle.XORBytes(blk, blk, prev)
+	ivs := s.ivs[:16*n]
+	clear(ivs)
+	for i := range n {
+		binary.LittleEndian.PutUint64(ivs[16*i:], pos+uint64(i*c.ss))
 	}
+	c.b.EncryptECB(ivs, ivs)
+	c.b.DecryptSectors(p, p, c.ss, ivs)
 }
 
 // elephantCipher is AES-CBC (eboiv) followed by the Elephant diffuser
@@ -107,14 +102,16 @@ type elephantCipher struct {
 	e cipher.Block
 }
 
+// decrypt runs CBC over the whole run, then the diffuser sector by sector.
 func (c *elephantCipher) decrypt(p []byte, pos uint64, s *scratch) {
+	c.cbcCipher.decrypt(p, pos, s)
 	for i := 0; i < len(p); i += c.ss {
-		c.sector(p[i:i+c.ss], pos+uint64(i), s)
+		c.diffuse(p[i:i+c.ss], pos+uint64(i), s)
 	}
 }
 
-func (c *elephantCipher) sector(p []byte, pos uint64, s *scratch) {
-	c.cbcCipher.sector(p, pos, s)
+// diffuse undoes the Elephant diffuser of one CBC-decrypted sector.
+func (c *elephantCipher) diffuse(p []byte, pos uint64, s *scratch) {
 	s.es = [16]byte{}
 	binary.LittleEndian.PutUint64(s.es[:], pos)
 	c.e.Encrypt(s.ks[:16], s.es[:])

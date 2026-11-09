@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/go-compressions/xz v0.3.1
+	github.com/go-encryptions/cbc v0.0.0-20261109200731-e5d634b5f6d2
 	github.com/go-encryptions/ccm v0.1.0
 	github.com/go-encryptions/xts v0.2.0
 )
