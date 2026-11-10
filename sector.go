@@ -10,11 +10,13 @@ import (
 	"github.com/go-encryptions/xts"
 )
 
-// sectorCipher decrypts one sector in place. pos is the sector's byte
-// offset on the device, which every method mixes in: the CBC IV is
-// AES(LE128(pos)), the XTS tweak is pos / sector size, the Elephant sector
-// key is AES over pos (Linux dm-crypt eboiv, elephant, plain64 with
-// iv_large_sectors, as cryptsetup sets them up for BitLocker).
+// sectorCipher decrypts a run of consecutive sectors in place. pos is the
+// byte offset on the device of the first one, which every method mixes in:
+// the CBC IV is AES(LE128(pos)), the XTS tweak is pos / sector size, the
+// Elephant sector key is AES over pos (Linux dm-crypt eboiv, elephant,
+// plain64 with iv_large_sectors, as cryptsetup sets them up for BitLocker).
+// A run, not a sector, so that XTS can hand it whole to
+// xts.DecryptSectors, which encrypts the tweaks of 8 sectors at a time.
 //
 // s holds the buffers a sector needs. Anything handed to a cipher.Block
 // escapes to the heap, so a local array would cost an allocation per
@@ -41,7 +43,7 @@ func newSectorCipher(m Method, key []byte, sectorSize int) (sectorCipher, error)
 		if err != nil {
 			return nil, err
 		}
-		return &cbcCipher{b: b}, nil
+		return &cbcCipher{b: b, ss: sectorSize}, nil
 	case AES128CBCElephant, AES256CBCElephant:
 		// The data key and the Elephant key have the same length.
 		half := len(key) / 2
@@ -50,13 +52,13 @@ func newSectorCipher(m Method, key []byte, sectorSize int) (sectorCipher, error)
 			return nil, err
 		}
 		e, _ := aes.NewCipher(key[half:])
-		return &elephantCipher{cbcCipher{b: b}, e}, nil
+		return &elephantCipher{cbcCipher{b: b, ss: sectorSize}, e}, nil
 	case AES128XTS, AES256XTS:
 		c, err := xts.NewCipher(aes.NewCipher, key)
 		if err != nil {
 			return nil, err
 		}
-		return &xtsCipher{c: c, shift: uint(sectorShift(sectorSize))}, nil
+		return &xtsCipher{c: c, ss: sectorSize, shift: uint(sectorShift(sectorSize))}, nil
 	}
 	return nil, unsupported("encryption method %#04x", uint16(m))
 }
@@ -69,12 +71,21 @@ func sectorShift(n int) int {
 }
 
 // cbcCipher is AES-CBC with dm-crypt's "eboiv": IV = AES_K(LE128(pos)).
-type cbcCipher struct{ b cipher.Block }
+type cbcCipher struct {
+	b  cipher.Block
+	ss int
+}
 
-// decrypt is CBC from the last block back to the first, so that each block
+func (c *cbcCipher) decrypt(p []byte, pos uint64, s *scratch) {
+	for i := 0; i < len(p); i += c.ss {
+		c.sector(p[i:i+c.ss], pos+uint64(i), s)
+	}
+}
+
+// sector is CBC from the last block back to the first, so that each block
 // is decrypted in place while the ciphertext block before it is still
 // there to XOR: no buffer and no cipher.BlockMode per sector.
-func (c *cbcCipher) decrypt(p []byte, pos uint64, s *scratch) {
+func (c *cbcCipher) sector(p []byte, pos uint64, s *scratch) {
 	s.iv = [16]byte{}
 	binary.LittleEndian.PutUint64(s.iv[:], pos)
 	c.b.Encrypt(s.iv[:], s.iv[:])
@@ -97,7 +108,13 @@ type elephantCipher struct {
 }
 
 func (c *elephantCipher) decrypt(p []byte, pos uint64, s *scratch) {
-	c.cbcCipher.decrypt(p, pos, s)
+	for i := 0; i < len(p); i += c.ss {
+		c.sector(p[i:i+c.ss], pos+uint64(i), s)
+	}
+}
+
+func (c *elephantCipher) sector(p []byte, pos uint64, s *scratch) {
+	c.cbcCipher.sector(p, pos, s)
 	s.es = [16]byte{}
 	binary.LittleEndian.PutUint64(s.es[:], pos)
 	c.e.Encrypt(s.ks[:16], s.es[:])
@@ -175,11 +192,12 @@ func diffuserBDecrypt(d []uint32) {
 // iv_large_sectors for 4 KiB sectors).
 type xtsCipher struct {
 	c     *xts.Cipher
+	ss    int
 	shift uint
 }
 
 func (c *xtsCipher) decrypt(p []byte, pos uint64, _ *scratch) {
-	c.c.Decrypt(p, p, pos>>c.shift)
+	c.c.DecryptSectors(p, p, c.ss, pos>>c.shift)
 }
 
 // region is a range of the decrypted device that does not map to the same
