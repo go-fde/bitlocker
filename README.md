@@ -84,23 +84,32 @@ requires 100% coverage.
 
 ## Performance
 
-`ReadAt` makes two allocations per call, whatever the length. A
+The number of allocations per `ReadAt` call does not depend on its length:
+two for XTS, three for CBC (the third holds the per-sector IVs). A
 sector-aligned read decrypts in the caller's buffer.
 
+Each run of sectors goes to the cipher in a single call:
+- XTS calls go-encryptions/xts's `DecryptSectors`, which encrypts the
+  tweaks of 8 sectors at a time.
+- CBC uses go-encryptions/cbc. One `EncryptECB` call produces the run's
+  eboiv IVs, and one `DecryptSectors` call decrypts the run, 8 blocks at a
+  time.
+
 The table below was measured on one Apple M4 Max core, reading 1 MiB per
-call from 512-byte-sector volumes, in two interleaved rounds. The
-reference is OpenSSL 3.6.5 on the same core (`openssl speed -seconds 2
--bytes 512 -evp …`):
+call from 512-byte-sector volumes. The figures come from
+`abbench --max-load 8`, 6 rounds interleaved with v0.1.1, all p=0.002. The
+reference is OpenSSL 3.6.5 on the same core
+(`openssl speed -seconds 2 -bytes 512 [-decrypt] -evp …`). Each `ReadAt`
+also copies the megabyte out of the in-memory test device; OpenSSL's
+figure does not include such a copy.
 
-| Method | this package | OpenSSL | |
-|---|---|---|---|
-| AES-128-XTS | 7.5 GB/s | 12.9 GB/s | per-sector cost in xts: go-encryptions/xts#16 |
-| AES-256-XTS | 6.5 GB/s | — | |
-| AES-128-CBC | 2.1 GB/s | 21.0 GB/s (4 KiB) | one block at a time: #2 |
-| AES-128-CBC + Elephant | 0.40 GB/s | no equivalent | dm-crypt's diffuser is kernel C, not measurable on macOS |
-| Key derivation (2²⁰ SHA-256) | 67 ms | ≈ 100 ms (2²⁰ × `openssl speed sha256` at 64 bytes) | |
-
-Every row below OpenSSL is an open defect, linked in the table.
+| Method | v0.1.1 | this version | OpenSSL | |
+|---|---|---|---|---|
+| AES-128-XTS | 7.33 GB/s | **11.8 GB/s** | 12.1 GB/s | the xts kernel alone is ahead of OpenSSL (go-encryptions/xts v0.2.0) |
+| AES-256-XTS | 6.19 GB/s | **10.0 GB/s** | — | |
+| AES-128-CBC | 1.97 GB/s | **13.0 GB/s** | 17.6 GB/s | the cbc kernel alone is at 104 % of OpenSSL (go-encryptions/cbc v0.1.0) |
+| AES-128-CBC + Elephant | 0.38 GB/s | **0.46 GB/s** | no equivalent | the diffuser dominates; dm-crypt's is kernel C, not measurable on macOS |
+| Key derivation (2²⁰ SHA-256) | 67 ms | 67 ms | ≈ 100 ms (2²⁰ × `openssl speed sha256` at 64 bytes) | |
 
 ## References
 

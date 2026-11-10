@@ -1,7 +1,7 @@
 github.com/go-compressions/xz v0.3.1 h1:z4U2wNrV71pgUvxkSlBuoZc7JCJ7d+Tb3tSjyMeGhKc=
 github.com/go-compressions/xz v0.3.1/go.mod h1:ZbYM2CbKR8SZzq6rqhqlWFnBaXrNhWwQyTSslnYQ0FU=
-github.com/go-encryptions/cbc v0.0.0-20261109200731-e5d634b5f6d2 h1:aY7GSV4iy8BxqGu1z6bZ8MWczlG9YthArJc0EvpJALE=
-github.com/go-encryptions/cbc v0.0.0-20261109200731-e5d634b5f6d2/go.mod h1:BhSOWBJ5QXH8trCypYXvpqVYqwchKfsQol+s2ZnNZYo=
+github.com/go-encryptions/cbc v0.1.0 h1:OhY536n6ZCr/nFt05xS4dr/1iuL/6rwUyjONu3WzUE4=
+github.com/go-encryptions/cbc v0.1.0/go.mod h1:BhSOWBJ5QXH8trCypYXvpqVYqwchKfsQol+s2ZnNZYo=
 github.com/go-encryptions/ccm v0.1.0 h1:kVq0WlU0U+CZIy/pa64MXgBWuJrv/0jot0H8HJAJx2o=
 github.com/go-encryptions/ccm v0.1.0/go.mod h1:N6dSqzbwzd+65hl2B8C/8S0avlWhGCbfY1DdAXSm0vo=
 github.com/go-encryptions/xts v0.2.0 h1:iy/XXrD1V5h4jZp1MX6Rfa/Tx/0XzBGmShacc3Bq810=
