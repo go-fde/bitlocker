@@ -6,7 +6,7 @@ require (
 	github.com/go-compressions/xz v0.3.1
 	github.com/go-encryptions/cbc v0.1.0
 	github.com/go-encryptions/ccm v0.1.0
-	github.com/go-encryptions/xts v0.2.0
+	github.com/go-encryptions/xts v0.3.1
 )
 
-require golang.org/x/sys v0.49.0 // indirect
+require golang.org/x/sys v0.50.0 // indirect
