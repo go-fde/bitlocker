@@ -42,6 +42,7 @@
 package bitlocker
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -133,8 +134,14 @@ func (d *Device) Info() *Info { return d.info }
 // Size is the length of the decrypted volume in bytes.
 func (d *Device) Size() int64 { return int64(d.layout.size) }
 
-// Close closes the underlying reader.
-func (d *Device) Close() error { return d.r.Close() }
+// Close wipes the sector key, drops the cipher that holds its expanded form
+// and closes the underlying reader. It must not run concurrently with ReadAt,
+// and ReadAt after Close fails.
+func (d *Device) Close() error {
+	clear(d.key)
+	d.c = nil
+	return d.r.Close()
+}
 
 // WriteAt is not implemented.
 func (d *Device) WriteAt(p []byte, off int64) (int, error) {
@@ -143,6 +150,9 @@ func (d *Device) WriteAt(p []byte, off int64) (int, error) {
 
 // ReadAt reads the decrypted volume at off.
 func (d *Device) ReadAt(p []byte, off int64) (int, error) {
+	if d.c == nil {
+		return 0, errors.New("bitlocker: device is closed")
+	}
 	if off < 0 {
 		return 0, fmt.Errorf("bitlocker: negative offset %d", off)
 	}
