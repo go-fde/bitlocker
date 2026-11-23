@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-encryptions/ccm"
+	"github.com/go-encryptions/kdfbudget"
 )
 
 func unsupported(format string, a ...any) error {
@@ -26,7 +27,22 @@ type Limits struct {
 	// MaxKeyDerivations is how many protectors may run the key derivation
 	// (2^20 SHA-256 each, about 0.1 s) before Open gives up with ErrLimit.
 	MaxKeyDerivations int
+	// Budget bounds the total key-derivation work of the unlock, in the
+	// units of go-encryptions/kdfbudget: each protector that runs the
+	// derivation is charged 2 * 0x100000 SHA-256 compressions before it runs,
+	// and one that does not fit is refused with ErrLimit. Nil means a fresh
+	// kdfbudget.Default() for each Open. A non-nil Budget is charged as given
+	// and is spent as it is used, so one Budget shared by several Opens caps
+	// their sum; give each Open its own to bound each alone.
+	Budget *kdfbudget.Budget
 }
+
+// newKDFBudget makes the budget of one unlock; tests replace it.
+var newKDFBudget = kdfbudget.Default
+
+// stretchWork is the compressions of one key derivation: 2^20 hashes of an
+// 88-byte record, 2 SHA-256 blocks each.
+const stretchWork = 2 * kdfIterations
 
 // DefaultLimits allows 16 key derivations: Windows writes one per password
 // or recovery password, and a volume rarely has more than three.
@@ -207,6 +223,10 @@ func ccmOpen(key []byte, d *ccmDatum) ([]byte, bool) {
 func unlock(in *Info, secret []byte, lim Limits) ([]byte, error) {
 	derivations := 0
 	tried := false
+	budget := lim.Budget
+	if budget == nil {
+		budget = newKDFBudget()
+	}
 	for i := range in.Protectors {
 		p := &in.Protectors[i]
 		var vmkKey []byte
@@ -234,6 +254,9 @@ func unlock(in *Info, secret []byte, lim Limits) ([]byte, error) {
 				return nil, fmt.Errorf("%w: more than %d key derivations", ErrLimit, lim.MaxKeyDerivations)
 			}
 			derivations++
+			if err := budget.ChargeCompressions(kdfbudget.CostSHA256, stretchWork); err != nil {
+				return nil, fmt.Errorf("protector %d: %w", i, err)
+			}
 			k := stretch(initial, p.salt)
 			vmkKey = k[:]
 		case StartupKey:

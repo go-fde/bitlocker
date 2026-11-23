@@ -9,4 +9,7 @@ require (
 	github.com/go-encryptions/xts v0.3.2
 )
 
-require golang.org/x/sys v0.50.0 // indirect
+require (
+	github.com/go-encryptions/kdfbudget v0.1.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+)

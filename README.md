@@ -78,7 +78,11 @@ requires 100% coverage.
 - The key derivation is fixed by the format (2²⁰ rounds of SHA-256, about
   0.1 s), so an image cannot make one derivation cost more. It can list
   many protectors, so `Limits.MaxKeyDerivations` (16 by default) bounds
-  their number and returns `ErrLimit` beyond it.
+  their number and returns `ErrLimit` beyond it. `Limits.Budget` (a
+  `go-encryptions/kdfbudget` budget, a fresh default per `Open` when nil)
+  bounds the total work: each derivation is charged 2 × 2²⁰ SHA-256
+  compressions before it runs, and `ErrLimit` is `kdfbudget.ErrLimit`. One
+  budget shared by several opens caps their sum.
 - The parsers are fuzzed (`FuzzOpen`, `FuzzStartupKey`,
   `FuzzRecoveryPassword`), and `govulncheck` runs in CI.
 
