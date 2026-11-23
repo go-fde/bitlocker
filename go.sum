@@ -4,6 +4,8 @@ github.com/go-encryptions/cbc v0.1.1 h1:lf+s862JXG6YrgPrVCZNiBby6dicHdBjMsTF/C+d
 github.com/go-encryptions/cbc v0.1.1/go.mod h1:BhSOWBJ5QXH8trCypYXvpqVYqwchKfsQol+s2ZnNZYo=
 github.com/go-encryptions/ccm v0.1.1 h1:bKwCdV0VESujynPXchslrB83CBPmTo/g2IqBKS77gS0=
 github.com/go-encryptions/ccm v0.1.1/go.mod h1:N6dSqzbwzd+65hl2B8C/8S0avlWhGCbfY1DdAXSm0vo=
+github.com/go-encryptions/kdfbudget v0.1.0 h1:/1n/q+kjoBq3A5JCW/ORQ/nuTbFMn5H22DLgcwCM6lU=
+github.com/go-encryptions/kdfbudget v0.1.0/go.mod h1:8mdvU3fDl6oyWKcTBOSI6Ws+sxZBYOxSPc9i4bpDzS0=
 github.com/go-encryptions/xts v0.3.2 h1:0HKFiBsCaT2+4sPBZXy/oT6Wo8a96EpUEmrDzdGO8sw=
 github.com/go-encryptions/xts v0.3.2/go.mod h1:DOulimnYhyZsjPPeMPDkD/i6cUOLq7mpfvGKG+cdVKQ=
 github.com/ulikunitz/xz v0.5.17 h1:flR0y/x1hgM8EGV1AW3Xll6T413G0glV8UfBwR617V4=

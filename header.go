@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/go-encryptions/kdfbudget"
 )
 
 // Errors. Every error this package returns for a malformed image wraps
@@ -24,8 +26,9 @@ var (
 	// secret given.
 	ErrWrongSecret = errors.New("bitlocker: no protector opened with this secret")
 	// ErrLimit means the volume asked for more key derivations than the
-	// Limits allow before one opened.
-	ErrLimit = errors.New("bitlocker: limit exceeded")
+	// Limits or their Budget allow before one opened. It is
+	// kdfbudget.ErrLimit, the value every go-fde backend refuses with.
+	ErrLimit = kdfbudget.ErrLimit
 	// ErrReadOnly is returned by WriteAt: this version only reads.
 	ErrReadOnly = errors.New("bitlocker: read-only")
 )
